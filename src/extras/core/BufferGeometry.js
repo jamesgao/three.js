@@ -24,12 +24,10 @@ THREE.BufferGeometry = function () {
 
 	this.dynamic = false;
 
-	// boundings
+	// bounds
 
 	this.boundingBox = null;
 	this.boundingSphere = null;
-
-	// for compatibility
 
 	this.morphTargets = [];
 
@@ -49,8 +47,18 @@ THREE.BufferGeometry.prototype = {
 
 	computeBoundingSphere: function () {
 
-	}
+	},
 
+	allocate: function (parameters) {
+
+		for (var name in parameters) {
+			var param = parameters[name];
+			if (name == "vertexIndex") {
+
+			}
+		}
+		
+	}
 
 };
 

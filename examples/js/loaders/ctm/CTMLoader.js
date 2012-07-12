@@ -107,7 +107,7 @@ THREE.CTMLoader.prototype.load = function( url, callback, useWorker, useBuffers,
 
 				if ( useWorker ) {
 
-					var worker = new Worker( "js/loaders/ctm/CTMWorker.js" );
+					var worker = new Worker( "resources/js/loaders/ctm/CTMWorker.js" );
 
 					worker.onmessage = function( event ) {
 
@@ -206,9 +206,8 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 		var scope = this;
 
-		var dynamic = false,
+		var dynamic = true,
 		computeNormals = true,
-		normalizeNormals = true,
 		reorderVertices = true;
 
 		scope.materials = [];
@@ -222,6 +221,8 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 		vertexNormalArray = file.body.normals;
 
 		var vertexUvArray, vertexColorArray;
+		var vertexMorphTargets = [];
+		var vertexMorphNormals = [];
 
 		if ( file.body.uvMaps !== undefined && file.body.uvMaps.length > 0 ) {
 
@@ -229,9 +230,18 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 		}
 
-		if ( file.body.attrMaps !== undefined && file.body.attrMaps.length > 0 && file.body.attrMaps[ 0 ].name === "Color" ) {
-
-			vertexColorArray = file.body.attrMaps[ 0 ].attr;
+		if ( file.body.attrMaps !== undefined && file.body.attrMaps.length > 0 ) {
+			var attrname;
+			for (var i = 0, il = file.body.attrMaps.length; i < il; i++) {
+				attrname = file.body.attrMaps[i].name;
+				if (attrname == "Color") {
+					vertexColorArray = file.body.attrMaps[ i ].attr;
+				} else if (attrname.slice(0, 11) == "morphTarget") {
+					vertexMorphTargets.push(file.body.attrMaps[i].attr);
+				} else {
+					console.log("Found unknown attribute: "+attrname);
+				}
+			}
 
 		}
 
@@ -243,91 +253,34 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 		if ( vertexNormalArray === undefined && computeNormals ) {
 
-			var nElements = vertexPositionArray.length;
-
-			vertexNormalArray = new Float32Array( nElements );
-
-			var vA, vB, vC, x, y, z,
-
-			pA = new THREE.Vector3(),
-			pB = new THREE.Vector3(),
-			pC = new THREE.Vector3(),
-
-			cb = new THREE.Vector3(),
-			ab = new THREE.Vector3();
-
-			for ( var i = 0; i < vertexIndexArray.length; i += 3 ) {
-
-				vA = vertexIndexArray[ i ];
-				vB = vertexIndexArray[ i + 1 ];
-				vC = vertexIndexArray[ i + 2 ];
-
-				x = vertexPositionArray[ vA * 3 ];
-				y = vertexPositionArray[ vA * 3 + 1 ];
-				z = vertexPositionArray[ vA * 3 + 2 ];
-				pA.set( x, y, z );
-
-				x = vertexPositionArray[ vB * 3 ];
-				y = vertexPositionArray[ vB * 3 + 1 ];
-				z = vertexPositionArray[ vB * 3 + 2 ];
-				pB.set( x, y, z );
-
-				x = vertexPositionArray[ vC * 3 ];
-				y = vertexPositionArray[ vC * 3 + 1 ];
-				z = vertexPositionArray[ vC * 3 + 2 ];
-				pC.set( x, y, z );
-
-				cb.sub( pC, pB );
-				ab.sub( pA, pB );
-				cb.crossSelf( ab );
-
-				vertexNormalArray[ vA * 3 ] 	+= cb.x;
-				vertexNormalArray[ vA * 3 + 1 ] += cb.y;
-				vertexNormalArray[ vA * 3 + 2 ] += cb.z;
-
-				vertexNormalArray[ vB * 3 ] 	+= cb.x;
-				vertexNormalArray[ vB * 3 + 1 ] += cb.y;
-				vertexNormalArray[ vB * 3 + 2 ] += cb.z;
-
-				vertexNormalArray[ vC * 3 ] 	+= cb.x;
-				vertexNormalArray[ vC * 3 + 1 ] += cb.y;
-				vertexNormalArray[ vC * 3 + 2 ] += cb.z;
-
-			}
-
-			if ( normalizeNormals ) {
-
-				for ( var i = 0; i < nElements; i += 3 ) {
-
-					x = vertexNormalArray[ i ];
-					y = vertexNormalArray[ i + 1 ];
-					z = vertexNormalArray[ i + 2 ];
-
-					var n = 1.0 / Math.sqrt( x * x + y * y + z * z );
-
-					vertexNormalArray[ i ] 	   *= n;
-					vertexNormalArray[ i + 1 ] *= n;
-					vertexNormalArray[ i + 2 ] *= n;
-
-				}
-
-			}
+			vertexNormalArray = CTM.calcSmoothNormals(vertexIndexArray, vertexPositionArray);
 
 		}
 
 		// reorder vertices
 		// (needed for buffer splitting, to keep together face vertices)
 
-		if ( reorderVertices ) {
+		if ( reorderVertices && vertexPositionArray.length / 3 > 65536 ) {
 
+			console.log("Reordering vertices...");
 			var newFaces = new Uint32Array( vertexIndexArray.length ),
 				newVertices = new Float32Array( vertexPositionArray.length );
 
-			var newNormals, newUvs, newColors;
+			var newNormals, newUvs, newColors, newMorphTargets;
 
 			if ( vertexNormalArray ) newNormals = new Float32Array( vertexNormalArray.length );
 			if ( vertexUvArray ) newUvs = new Float32Array( vertexUvArray.length );
 			if ( vertexColorArray ) newColors = new Float32Array( vertexColorArray.length );
+			if ( vertexMorphTargets ) {
+
+				newMorphTargets = []
+				for (var i = 0, il = vertexMorphTargets.length; i < il; i++) {
+
+					newMorphTargets.push( new Float32Array( vertexMorphTargets[i].length ) );
+
+				}
+
+			}
 
 			var indexMap = {}, vertexCounter = 0;
 
@@ -373,6 +326,18 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 					}
 
+					if ( vertexMorphTargets ) {
+
+						for (var i = 0, il = vertexMorphTargets.length; i < il; i++) {
+
+							newMorphTargets[i][vertexCounter * 4]     = vertexMorphTargets[i][ v*4 ];
+							newMorphTargets[i][vertexCounter * 4 + 1] = vertexMorphTargets[i][ v*4 + 1];
+							newMorphTargets[i][vertexCounter * 4 + 2] = vertexMorphTargets[i][ v*4 + 2];
+
+						}
+
+					}
+
 					vertexCounter += 1;
 
 				}
@@ -403,61 +368,66 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 			if ( vertexNormalArray ) vertexNormalArray = newNormals;
 			if ( vertexUvArray ) vertexUvArray = newUvs;
 			if ( vertexColorArray ) vertexColorArray = newColors;
+			if ( vertexMorphTargets ) vertexMorphTargets = newMorphTargets;
 
-		}
+			// compute offsets
 
-		// compute offsets
+			scope.offsets = [];
 
-		scope.offsets = [];
+			var indices = vertexIndexArray;
 
-		var indices = vertexIndexArray;
+			var start = 0,
+				min = vertexPositionArray.length,
+				max = 0,
+				minPrev = min;
 
-		var start = 0,
-			min = vertexPositionArray.length,
-			max = 0,
-			minPrev = min;
+			for ( var i = 0; i < indices.length; ) {
 
-		for ( var i = 0; i < indices.length; ) {
+				for ( var j = 0; j < 3; ++ j ) {
 
-			for ( var j = 0; j < 3; ++ j ) {
+					var idx = indices[ i ++ ];
 
-				var idx = indices[ i ++ ];
-
-				if ( idx < min ) min = idx;
-				if ( idx > max ) max = idx;
-
-			}
-
-			if ( max - min > 65535 ) {
-
-				i -= 3;
-
-				for ( var k = start; k < i; ++ k ) {
-
-					indices[ k ] -= minPrev;
+					if ( idx < min ) min = idx;
+					else if ( idx > max ) max = idx;
 
 				}
 
-				scope.offsets.push( { start: start, count: i - start, index: minPrev } );
+				if ( max - min > 65535 ) {
 
-				start = i;
-				min = vertexPositionArray.length;
-				max = 0;
+					i -= 3;
+
+					for ( var k = start; k < i; ++ k ) {
+
+						indices[ k ] -= minPrev;
+
+					}
+
+					scope.offsets.push( { start: start, count: i - start, index: minPrev } );
+
+					start = i;
+					min = vertexPositionArray.length;
+					max = 0;
+
+				}
+
+				minPrev = min;
 
 			}
 
-			minPrev = min;
+			for ( var k = start; k < i; ++ k ) {
+
+				indices[ k ] -= minPrev;
+
+			}
+
+			scope.offsets.push( { start: start, count: i - start, index: minPrev } );
+			scope.indexMap = indexMap;
+
+		} else {
+
+			scope.offsets = [{ start: 0, count: vertexIndexArray.length, index: 0 }];
 
 		}
-
-		for ( var k = start; k < i; ++ k ) {
-
-			indices[ k ] -= minPrev;
-
-		}
-
-		scope.offsets.push( { start: start, count: i - start, index: minPrev } );
-
 
 		// indices
 
@@ -521,6 +491,40 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 			scope.vertexColorBuffer.itemSize = 4;
 			scope.vertexColorBuffer.numItems = vertexColorArray.length;
+
+		}
+
+		if ( vertexMorphTargets !== undefined ) {
+
+			var buf, norms;
+			scope.__webglMorphTargetsBuffers = [];
+			scope.__webglMorphNormalsBuffers = [];
+
+			for (var i = 0, il = vertexMorphTargets.length; i < il; i++) {
+
+				buf = gl.createBuffer();
+				gl.bindBuffer( gl.ARRAY_BUFFER, buf );
+				gl.bufferData( gl.ARRAY_BUFFER, vertexMorphTargets[i], gl.STATIC_DRAW );
+
+				buf.itemSize = 3;
+				buf.stride = 4;
+				buf.numItems = vertexMorphTargets[i].length;
+
+				scope.__webglMorphTargetsBuffers.push( buf );
+
+				norms = THREE.CTMLoader.calcNormals(vertexIndexArray, vertexMorphTargets[i], 4);
+				buf = gl.createBuffer();
+				gl.bindBuffer( gl.ARRAY_BUFFER, buf );
+				gl.bufferData( gl.ARRAY_BUFFER, norms, gl.STATIC_DRAW );
+
+				buf.itemSize = 3;
+				buf.stride = 3;
+				buf.numItems = vertexMorphTargets[i].length;
+
+				vertexMorphNormals.push( norms );
+				scope.__webglMorphNormalsBuffers.push( buf );
+
+			}
 
 		}
 
@@ -590,8 +594,12 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 			scope.vertexNormalArray = vertexNormalArray;
 			scope.vertexUvArray = vertexUvArray;
 			scope.vertexColorArray = vertexColorArray;
+			scope.morphTargets = vertexMorphTargets;
+			scope.morphNormals = vertexMorphNormals;
 
 		}
+
+		scope.__webglVertexBuffer = scope.vertexPositionBuffer;
 
 	}
 
@@ -814,4 +822,72 @@ THREE.CTMLoader.prototype.createModelClassic = function ( file, callback ) {
 
 	callback( new Model() );
 
+};
+
+THREE.CTMLoader.calcNormals = function(indices, vertices, stride){
+	/*
+	 * From js-ctm
+	 */
+
+	stride = stride === undefined ? 3 : stride;
+	var smooth = new Float32Array(vertices.length / stride * 3),
+		sidx, sidy, sidz,
+		indx, indy, indz, nx, ny, nz,
+		v1x, v1y, v1z, v2x, v2y, v2z, len,
+		i, k;
+
+	for (i = 0, k = indices.length; i < k;){
+		indx = indices[i ++];
+		indy = indices[i ++];
+		indz = indices[i ++];
+		sidx = indx * 3;
+		sidy = indy * 3;
+		sidz = indz * 3;
+		indx *= stride;
+		indy *= stride;
+		indz *= stride;
+
+		v1x = vertices[indy]     - vertices[indx];
+		v2x = vertices[indz]     - vertices[indx];
+		v1y = vertices[indy + 1] - vertices[indx + 1];
+		v2y = vertices[indz + 1] - vertices[indx + 1];
+		v1z = vertices[indy + 2] - vertices[indx + 2];
+		v2z = vertices[indz + 2] - vertices[indx + 2];
+
+		nx = v1y * v2z - v1z * v2y;
+		ny = v1z * v2x - v1x * v2z;
+		nz = v1x * v2y - v1y * v2x;
+
+		len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+		if (len > 1e-10){
+			nx /= len;
+			ny /= len;
+			nz /= len;
+		}
+
+		smooth[sidx]     += nx;
+		smooth[sidx + 1] += ny;
+		smooth[sidx + 2] += nz;
+		smooth[sidy]     += nx;
+		smooth[sidy + 1] += ny;
+		smooth[sidy + 2] += nz;
+		smooth[sidz]     += nx;
+		smooth[sidz + 1] += ny;
+		smooth[sidz + 2] += nz;
+	}
+
+	for (i = 0, k = smooth.length; i < k; i += 3){
+		len = Math.sqrt(
+			smooth[i] * smooth[i] + 
+			smooth[i + 1] * smooth[i + 1] +	
+			smooth[i + 2] * smooth[i + 2]);
+
+		if(len > 1e-10){
+			smooth[i]     /= len;
+			smooth[i + 1] /= len;
+			smooth[i + 2] /= len;
+		}
+	}
+	
+	return smooth;
 };

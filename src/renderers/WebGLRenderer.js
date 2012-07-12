@@ -3005,12 +3005,22 @@ THREE.WebGLRenderer = function ( parameters ) {
 				if ( updateBuffers ) {
 
 					// vertices
+					if ( !material.morphTargets && attributes.position >= 0) {
 
-					var positionSize = geometryGroup.vertexPositionBuffer.itemSize;
+						var positionSize = geometryGroup.vertexPositionBuffer.itemSize;
+						_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.vertexPositionBuffer );
+						_gl.vertexAttribPointer( attributes.position, geometryGroup.vertexPositionBuffer.itemSize, _gl.FLOAT, false, 0, offsets[ i ].index * 4 * positionSize );
 
-					_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.vertexPositionBuffer );
-					_gl.vertexAttribPointer( attributes.position, positionSize, _gl.FLOAT, false, 0, offsets[ i ].index * positionSize * 4 ); // 4 bytes per Float32
+					} else {
 
+						if ( object.morphTargetBase ) {
+
+							setupMorphTargets( material, geometryGroup, object, offsets[ i ].index );
+
+						}
+						
+					}
+					
 					// normals
 
 					if ( attributes.normal >= 0 && geometryGroup.vertexNormalBuffer ) {
@@ -3051,7 +3061,6 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 						_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.vertexColorBuffer );
 						_gl.vertexAttribPointer( attributes.color, colorSize, _gl.FLOAT, false, 0, offsets[ i ].index * colorSize * 4 );
-
 
 					}
 
@@ -3282,24 +3291,31 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	};
 
-	function setupMorphTargets ( material, geometryGroup, object ) {
+	function setupMorphTargets ( material, geometryGroup, object, offset ) {
 
 		// set base
+		offset = offset === undefined ? 0 : offset;
 
+		var buf, stride;
 		var attributes = material.program.attributes;
 
 		if ( object.morphTargetBase !== -1 ) {
 
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglMorphTargetsBuffers[ object.morphTargetBase ] );
-			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, 0, 0 );
+			buf = geometryGroup.__webglMorphTargetsBuffers[ object.morphTargetBase ];
+			stride = buf.stride === undefined ? 3 : buf.stride;
+			_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
 		} else if ( attributes.position >= 0 ) {
 
+			buf = geometryGroup.__webglVertexBuffer;
+			stride = buf.stride === undefined ? 3 : buf.stride;
 			_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglVertexBuffer );
-			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, 0, 0 );
+			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
-		}
+		}		
 
+		
 		if ( object.morphTargetForcedOrder.length ) {
 
 			// set forced order
@@ -3310,13 +3326,17 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 			while ( m < material.numSupportedMorphTargets && m < order.length ) {
 
-				_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglMorphTargetsBuffers[ order[ m ] ] );
-				_gl.vertexAttribPointer( attributes[ "morphTarget" + m ], 3, _gl.FLOAT, false, 0, 0 );
+				buf = geometryGroup.__webglMorphTargetsBuffers[ order[ m ] ];
+				stride = buf.stride === undefined ? 3 : buf.stride;
+				_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+				_gl.vertexAttribPointer( attributes[ "morphTarget" + m ], 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
 				if ( material.morphNormals ) {
 
-					_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglMorphNormalsBuffers[ order[ m ] ] );
-					_gl.vertexAttribPointer( attributes[ "morphNormal" + m ], 3, _gl.FLOAT, false, 0, 0 );
+					buf = geometryGroup.__webglMorphNormalsBuffers[ order[ m ] ];
+					stride = buf.stride === undefined ? 3 : buf.stride;
+					_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+					_gl.vertexAttribPointer( attributes[ "morphNormal" + m ], 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
 				}
 
@@ -3368,14 +3388,17 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 					influenceIndex = activeInfluenceIndices[ m ][ 0 ];
 
-					_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglMorphTargetsBuffers[ influenceIndex ] );
-
-					_gl.vertexAttribPointer( attributes[ "morphTarget" + m ], 3, _gl.FLOAT, false, 0, 0 );
+					buf = geometryGroup.__webglMorphTargetsBuffers[ influenceIndex ];
+					stride = buf.stride === undefined ? 3 : buf.stride;
+					_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+					_gl.vertexAttribPointer( attributes[ "morphTarget" + m ], 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
 					if ( material.morphNormals ) {
 
-						_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglMorphNormalsBuffers[ influenceIndex ] );
-						_gl.vertexAttribPointer( attributes[ "morphNormal" + m ], 3, _gl.FLOAT, false, 0, 0 );
+						buf = geometryGroup.__webglMorphNormalsBuffers[ influenceIndex ] ;
+						stride = buf.stride === undefined ? 3 : buf.stride;
+						_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+						_gl.vertexAttribPointer( attributes[ "morphNormal" + m ], 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
 					}
 
@@ -3396,11 +3419,10 @@ THREE.WebGLRenderer = function ( parameters ) {
 				}
 
 				m ++;
-
+				
 			}
-
 		}
-
+		
 		// load updated influences uniform
 
 		if ( material.program.uniforms.morphTargetInfluences !== null ) {
