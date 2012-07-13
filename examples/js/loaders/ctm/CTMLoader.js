@@ -36,7 +36,7 @@ THREE.CTMLoader.prototype.loadParts = function( url, callback, useWorker, useBuf
 
 				var materials = [], geometries = [], counter = 0;
 
-				function callbackFinal( geometry ) {
+				function callbackFinal( geometry, header ) {
 
 					counter += 1;
 
@@ -44,7 +44,7 @@ THREE.CTMLoader.prototype.loadParts = function( url, callback, useWorker, useBuf
 
 					if ( counter === jsonObject.offsets.length ) {
 
-						callback( geometries, materials );
+						callback( geometries, materials, header, jsonObject );
 
 					}
 
@@ -100,8 +100,9 @@ THREE.CTMLoader.prototype.load = function( url, callback, useWorker, useBuffers,
 			if ( xhr.status === 200 || xhr.status === 0 ) {
 
 				var binaryData = xhr.responseText;
+				var header = offsets[0] > 0 ? binaryData.slice(0, offsets[0]) : "";
 
-				//var s = Date.now();
+				var s = Date.now();
 
 				if ( useWorker ) {
 
@@ -117,18 +118,18 @@ THREE.CTMLoader.prototype.load = function( url, callback, useWorker, useBuffers,
 
 							if ( useBuffers ) {
 
-								scope.createModelBuffers( ctmFile, callback );
+								scope.createModelBuffers( ctmFile, callback, header );
 
 							} else {
 
-								scope.createModelClassic( ctmFile, callback );
+								scope.createModelClassic( ctmFile, callback, header );
 
 							}
 
 						}
 
-						//var e = Date.now();
-						//console.log( "CTM data parse time [worker]: " + (e-s) + " ms" );
+						var e = Date.now();
+						console.log( "CTM data parse time [worker]: " + (e-s) + " ms" );
 
 					};
 
@@ -146,11 +147,11 @@ THREE.CTMLoader.prototype.load = function( url, callback, useWorker, useBuffers,
 
 						if ( useBuffers ) {
 
-							scope.createModelBuffers( ctmFile, callback );
+							scope.createModelBuffers( ctmFile, callback, header );
 
 						} else {
 
-							scope.createModelClassic( ctmFile, callback );
+							scope.createModelClassic( ctmFile, callback, header );
 
 						}
 
@@ -196,7 +197,7 @@ THREE.CTMLoader.prototype.load = function( url, callback, useWorker, useBuffers,
 };
 
 
-THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
+THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback, header ) {
 
 	var Model = function ( ) {
 
@@ -208,40 +209,41 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 		THREE.BufferGeometry.call( this );
 
+		var attrname, array;
+		var attributes = {}, morphTargets = [];
+
 		// init GL buffers
 
-		var vertexIndexArray = file.body.indices,
-		vertexPositionArray = file.body.vertices,
-		vertexNormalArray = file.body.normals;
-
-		var vertexUvArray, vertexColorArray, vertexMorphTargets = [];
+		attributes.index = { itemSize:1, array:file.body.indices, numItems:file.body.indices.length };
+		attributes.position = { itemSize:3, array:file.body.vertices, numItems:file.body.vertices.length };
+		attributes.normal = { itemSize:3, array:file.body.normals, numItems:file.body.vertices.length, stride:3 };
 
 		if ( file.body.uvMaps !== undefined && file.body.uvMaps.length > 0 ) {
 
-			vertexUvArray = file.body.uvMaps[ 0 ].uv;
+			for (var i = 0, il = file.body.uvMaps.length; i < il; i++) {
+
+				attrname = file.body.uvMaps[ i ].name;
+				array = file.body.uvMaps[i].uv;
+				attributes[ attrname ] = { itemSize:2, array:array, numItems:array.length };
+
+			}
 
 		}
 
 		if ( file.body.attrMaps !== undefined && file.body.attrMaps.length > 0 ) {
 
-			var attrname, array;
-
 			for (var i = 0, il = file.body.attrMaps.length; i < il; i++) {
 
-				attrname = file.body.attrMaps[i].name;
+				attrname = file.body.attrMaps[ i ].name;
+				array = file.body.attrMaps[ i ].attr;
 
-				if (attrname == "Color") {
+				if (attrname.slice(0, 11) == "morphTarget") {
 
-					vertexColorArray = file.body.attrMaps[ i ].attr;
-
-				} else if (attrname.slice(0, 11) == "morphTarget") {
-
-					array = file.body.attrMaps[i].attr;
-					vertexMorphTargets.push( { array:array, stride:4 } );
+					morphTargets.push( { array:array, stride:4 } );
 
 				} else {
 
-					console.log("Found unknown attribute: "+attrname);
+					attribs[ attrname ] = { itemSize:4, array:array, numItems:array.length, stride:4 };
 
 				}
 
@@ -249,49 +251,25 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 		}
 
+		// attributes
+
+		scope.attributes = attributes;
+		scope.morphTargets = morphTargets;
+
 		// reorder vertices
 		// (needed for buffer splitting, to keep together face vertices)
 
-		if ( reorderVertices && vertexPositionArray.length / 3 > 65536 ) {
+		if ( reorderVertices && attributes.position.array.length / 3 > 65536 ) {
 
 			scope.reorderVertices();
 
 		} else {
 
-			scope.offsets = [{ start: 0, count: vertexIndexArray.length, index: 0 }];
+			// recast CTM 32-bit indices as 16-bit WebGL indices
+			scope.attributes.index.array = new Uint16Array( attributes.index.array );
+			scope.offsets = [{ start: 0, count: attributes.index.array.length, index: 0 }];
 
 		}
-
-		// recast CTM 32-bit indices as 16-bit WebGL indices
-
-		var vertexIndexArray16 = new Uint16Array( vertexIndexArray );
-
-		// attributes
-
-		var attributes = scope.attributes;
-
-		attributes[ "index" ]    = { itemSize: 1, array: vertexIndexArray16, numItems: vertexIndexArray16.length };
-		attributes[ "position" ] = { itemSize: 3, array: vertexPositionArray, numItems: vertexPositionArray.length };
-
-		if ( vertexNormalArray !== undefined ) {
-
-			attributes[ "normal" ] = { itemSize: 3, array: vertexNormalArray, numItems: vertexNormalArray.length };
-
-		}
-
-		if ( vertexUvArray !== undefined ) {
-
-			attributes[ "uv" ] = { itemSize: 2, array: vertexUvArray, numItems: vertexUvArray.length };
-
-		}
-
-		if ( vertexColorArray !== undefined ) {
-
-			attributes[ "color" ]  = { itemSize: 4, array: vertexColorArray, numItems: vertexColorArray.length };
-
-		}
-
-		scope.morphTargets = vertexMorphTargets;
 
 	}
 
@@ -313,11 +291,11 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback ) {
 
 	}
 
-	callback( geometry );
+	callback( geometry, header );
 
 };
 
-THREE.CTMLoader.prototype.createModelClassic = function ( file, callback ) {
+THREE.CTMLoader.prototype.createModelClassic = function ( file, callback, header ) {
 
 	var Model = function ( ) {
 
@@ -528,6 +506,6 @@ THREE.CTMLoader.prototype.createModelClassic = function ( file, callback ) {
 
 	Model.prototype = Object.create( THREE.Geometry.prototype );
 
-	callback( new Model() );
+	callback( new Model(), header );
 
 };

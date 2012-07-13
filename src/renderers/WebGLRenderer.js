@@ -931,15 +931,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 		for ( a in geometry.attributes ) {
 
-			if ( a === "index" ) {
-
-				type = _gl.ELEMENT_ARRAY_BUFFER;
-
-			} else {
-
-				type = _gl.ARRAY_BUFFER;
-
-			}
+			type = a.indexOf("index") >= 0 ? _gl.ELEMENT_ARRAY_BUFFER : _gl.ARRAY_BUFFER;
 
 			attribute = geometry.attributes[ a ];
 
@@ -947,6 +939,9 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 			_gl.bindBuffer( type, attribute.buffer );
 			_gl.bufferData( type, attribute.array, _gl.STATIC_DRAW );
+
+			if (a === "index")
+				console.log(type, attribute.array);
 
 		}
 
@@ -2948,48 +2943,25 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	function setDirectBuffers ( geometry, hint, dispose ) {
 
+		var type;
 		var attributes = geometry.attributes;
 
-		var index = attributes[ "index" ];
-		var position = attributes[ "position" ];
-		var normal = attributes[ "normal" ];
-		var uv = attributes[ "uv" ];
-		var color = attributes[ "color" ];
+		//Maps the name of the "needupdate variable" to the direct buffer attribute name
+		var needupdate = { index:"elements", position:"vertices", normal:"normals", uv:"uvs", color:"colors" };
 
-		if ( geometry.elementsNeedUpdate && index !== undefined ) {
+		for ( var attr in attributes ) {
 
-			_gl.bindBuffer( _gl.ELEMENT_ARRAY_BUFFER, index.buffer );
-			_gl.bufferData( _gl.ELEMENT_ARRAY_BUFFER, index.array, hint );
+			if ( needupdate[attr] === undefined || geometry[ needupdate[attr] + "NeedUpdate" ] ) {
 
-		}
+				type = attr.indexOf("index") >= 0 ? _gl.ELEMENT_ARRAY_BUFFER : _gl.ARRAY_BUFFER;
 
-		if ( geometry.verticesNeedUpdate && position !== undefined ) {
+				_gl.bindBuffer( type, attributes[ attr ].buffer );
+				_gl.bufferData( type, attributes[ attr ].array, hint );
 
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, position.buffer );
-			_gl.bufferData( _gl.ARRAY_BUFFER, position.array, hint );
+			}
 
 		}
 
-		if ( geometry.normalsNeedUpdate && normal !== undefined ) {
-
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, normal.buffer );
-			_gl.bufferData( _gl.ARRAY_BUFFER, normal.array, hint );
-
-		}
-
-		if ( geometry.uvsNeedUpdate && uv !== undefined ) {
-
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, uv.buffer );
-			_gl.bufferData( _gl.ARRAY_BUFFER, uv.array, hint );
-
-		}
-
-		if ( geometry.colorsNeedUpdate && color !== undefined ) {
-
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, color.buffer );
-			_gl.bufferData( _gl.ARRAY_BUFFER, color.array, hint );
-
-		}
 
 		if ( geometry.morphTargetsNeedUpdate && geometry.morphTargets.length < 0 ) {
 
@@ -3008,8 +2980,6 @@ THREE.WebGLRenderer = function ( parameters ) {
 			}
 
 		}
-
-
 
 
 		if ( dispose ) {
@@ -3189,53 +3159,31 @@ THREE.WebGLRenderer = function ( parameters ) {
 						
 					}
 
-					// normals
+					var attrib;
+					var updated = { position:true, index:true };
 
-					var normal = geometry.attributes[ "normal" ];
+					for ( var attrname in geometry.attributes ) {
 
-					if ( attributes.normal >= 0 && normal ) {
+						attrib = geometry.attributes[ attrname ];
 
-						var normalSize = normal.itemSize;
+						if ( !updated[ attrname ] && attributes[ attrname ] >= 0 ) {
 
-						_gl.bindBuffer( _gl.ARRAY_BUFFER, normal.buffer );
-						_gl.vertexAttribPointer( attributes.normal, normalSize, _gl.FLOAT, false, 0, startIndex * normalSize * 4 );
+							if ( attrib.buffer ) {
 
-					}
+								_gl.bindBuffer( _gl.ARRAY_BUFFER, attrib.buffer );
+								_gl.vertexAttribPointer( attributes[ attrname ], attrib.itemSize, _gl.FLOAT, false, attrib.stride*4, startIndex * attrib.stride * 4 );
 
-					// uvs
+								//_gl.enableVertexAttribArray( attributes[ attrname ] );
 
-					var uv = geometry.attributes[ "uv" ];
+							} else {
 
-					if ( attributes.uv >= 0 && uv ) {
+								_gl.disableVertexAttribArray( attributes[ attrname ] );
 
-						if ( uv.buffer ) {
-
-							var uvSize = uv.itemSize;
-
-							_gl.bindBuffer( _gl.ARRAY_BUFFER, uv.buffer );
-							_gl.vertexAttribPointer( attributes.uv, uvSize, _gl.FLOAT, false, 0, startIndex * uvSize * 4 );
-
-							_gl.enableVertexAttribArray( attributes.uv );
-
-						} else {
-
-							_gl.disableVertexAttribArray( attributes.uv );
+							}
 
 						}
 
-					}
-
-					// colors
-
-					var color = geometry.attributes[ "color" ];
-
-					if ( attributes.color >= 0 && color ) {
-
-						var colorSize = color.itemSize;
-
-						_gl.bindBuffer( _gl.ARRAY_BUFFER, color.buffer );
-						_gl.vertexAttribPointer( attributes.color, colorSize, _gl.FLOAT, false, 0, startIndex * colorSize * 4 );
-
+						updated[ attrname ] = true;
 
 					}
 
@@ -3249,7 +3197,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 				// render indexed triangles
 
-				_gl.drawElements( _gl.TRIANGLES, offsets[ i ].count, _gl.UNSIGNED_SHORT, offsets[ i ].start * 2 ); // 2 bytes per Uint16
+				_gl.drawElements( _gl.TRIANGLES, index.numItems, _gl.UNSIGNED_SHORT, offsets[ i ].start * 2 ); // 2 bytes per Uint16
 
 				_this.info.render.calls ++;
 				_this.info.render.vertices += offsets[ i ].count; // not really true, here vertices can be shared
@@ -3481,20 +3429,17 @@ THREE.WebGLRenderer = function ( parameters ) {
 		if ( object.morphTargetBase !== -1 ) {
 
 			buf = geometryGroup.__webglMorphTargetsBuffers[ object.morphTargetBase ];
-			stride = buf.stride === undefined ? 3 : buf.stride;
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
-			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
-		} else if ( attributes.position >= 0 ) {
+		} else {
 
 			buf = geometryGroup.__webglVertexBuffer;
-			stride = buf.stride === undefined ? 3 : buf.stride;
-			_gl.bindBuffer( _gl.ARRAY_BUFFER, geometryGroup.__webglVertexBuffer );
-			_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, stride*4, offset*4*stride );
 
-		}		
+		}
 
-		
+		stride = buf.stride === undefined ? 3 : buf.stride;
+		_gl.bindBuffer( _gl.ARRAY_BUFFER, buf );
+		_gl.vertexAttribPointer( attributes.position, 3, _gl.FLOAT, false, stride*4, offset*4*stride );
+
 		if ( object.morphTargetForcedOrder.length ) {
 
 			// set forced order
@@ -6523,8 +6468,14 @@ THREE.WebGLRenderer = function ( parameters ) {
 			console.log( 'THREE.WebGLRenderer: Float textures not supported.' );
 
 		}
-
-		return gl;
+		function logGLCall(functionName, args) {   
+   console.log("gl." + functionName + "(" + 
+      WebGLDebugUtils.glFunctionArgsToString(functionName, args) + ")");   
+} 
+ function throwOnGLError(err, funcName, args) {
+  throw WebGLDebugUtils.glEnumToString(err) + " was caused by call to: " + funcName;
+};
+		return WebGLDebugUtils.makeDebugContext(gl, undefined, logGLCall);
 
 	};
 
