@@ -940,9 +940,6 @@ THREE.WebGLRenderer = function ( parameters ) {
 			_gl.bindBuffer( type, attribute.buffer );
 			_gl.bufferData( type, attribute.array, _gl.STATIC_DRAW );
 
-			if (a === "index")
-				console.log(type, attribute.array);
-
 		}
 
 		geometry.__webglVertexBuffer = geometry.attributes.position.buffer;
@@ -3167,13 +3164,13 @@ THREE.WebGLRenderer = function ( parameters ) {
 						attrib = geometry.attributes[ attrname ];
 
 						if ( !updated[ attrname ] && attributes[ attrname ] >= 0 ) {
-
+							
 							if ( attrib.buffer ) {
 
 								_gl.bindBuffer( _gl.ARRAY_BUFFER, attrib.buffer );
 								_gl.vertexAttribPointer( attributes[ attrname ], attrib.itemSize, _gl.FLOAT, false, attrib.stride*4, startIndex * attrib.stride * 4 );
 
-								//_gl.enableVertexAttribArray( attributes[ attrname ] );
+								_gl.enableVertexAttribArray( attributes[ attrname ] );
 
 							} else {
 
@@ -6468,14 +6465,8 @@ THREE.WebGLRenderer = function ( parameters ) {
 			console.log( 'THREE.WebGLRenderer: Float textures not supported.' );
 
 		}
-		function logGLCall(functionName, args) {   
-   console.log("gl." + functionName + "(" + 
-      WebGLDebugUtils.glFunctionArgsToString(functionName, args) + ")");   
-} 
- function throwOnGLError(err, funcName, args) {
-  throw WebGLDebugUtils.glEnumToString(err) + " was caused by call to: " + funcName;
-};
-		return WebGLDebugUtils.makeDebugContext(gl, undefined, logGLCall);
+		
+		return gl;
 
 	};
 

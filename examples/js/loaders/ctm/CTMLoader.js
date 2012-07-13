@@ -216,7 +216,8 @@ THREE.CTMLoader.prototype.createModelBuffers = function ( file, callback, header
 
 		attributes.index = { itemSize:1, array:file.body.indices, numItems:file.body.indices.length };
 		attributes.position = { itemSize:3, array:file.body.vertices, numItems:file.body.vertices.length };
-		attributes.normal = { itemSize:3, array:file.body.normals, numItems:file.body.vertices.length, stride:3 };
+		if (file.body.normals !== undefined)
+			attributes.normal = { itemSize:3, array:file.body.normals, numItems:file.body.normals.length, stride:3 };
 
 		if ( file.body.uvMaps !== undefined && file.body.uvMaps.length > 0 ) {
 
